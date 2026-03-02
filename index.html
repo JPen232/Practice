@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pomodoro Timer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #1a1a2e;
+      --surface: #16213e;
+      --card: #0f3460;
+      --accent: #e94560;
+      --accent-hover: #c73652;
+      --text: #eaeaea;
+      --text-muted: #a0a0b0;
+      --green: #4caf50;
+      --blue: #2196f3;
+      --radius: 12px;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      padding: 24px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      letter-spacing: 2px;
+      margin-bottom: 32px;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    /* Mode tabs */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 32px;
+    }
+
+    .tab {
+      padding: 8px 20px;
+      border: 2px solid transparent;
+      border-radius: 24px;
+      background: var(--surface);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .tab:hover { border-color: var(--accent); color: var(--text); }
+    .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    /* Timer card */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 40px 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 32px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      min-width: 320px;
+    }
+
+    /* SVG ring */
+    .ring-wrap {
+      position: relative;
+      width: 220px;
+      height: 220px;
+    }
+
+    .ring-wrap svg {
+      transform: rotate(-90deg);
+      width: 100%;
+      height: 100%;
+    }
+
+    .ring-bg { fill: none; stroke: var(--surface); stroke-width: 10; }
+    .ring-progress {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 10;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 1s linear, stroke 0.3s;
+    }
+
+    .ring-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #display {
+      font-size: 3.5rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      line-height: 1;
+    }
+
+    #mode-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 4px;
+    }
+
+    /* Session dots */
+    .dots {
+      display: flex;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 2px solid var(--text-muted);
+      transition: background 0.3s;
+    }
+
+    .dot.done { background: var(--accent); border-color: var(--accent); }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      padding: 14px 40px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 40px;
+      font-size: 1.1rem;
+      letter-spacing: 1px;
+    }
+
+    .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+
+    .btn-icon {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface);
+      color: var(--text-muted);
+      border-radius: 50%;
+      font-size: 1.1rem;
+    }
+
+    .btn-icon:hover { background: var(--card); color: var(--text); }
+
+    /* Settings */
+    .settings {
+      margin-top: 28px;
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+      min-width: 320px;
+    }
+
+    .setting-group label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+
+    .setting-group input[type="number"] {
+      width: 100%;
+      padding: 8px;
+      background: var(--card);
+      border: 1px solid transparent;
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 1rem;
+      text-align: center;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .setting-group input[type="number"]:focus { border-color: var(--accent); }
+
+    /* Notification toggle */
+    .notif-row {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .toggle {
+      position: relative;
+      width: 40px;
+      height: 22px;
+    }
+
+    .toggle input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: var(--surface);
+      border-radius: 22px;
+      transition: 0.3s;
+    }
+
+    .slider::before {
+      content: '';
+      position: absolute;
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: 0.3s;
+    }
+
+    .toggle input:checked + .slider { background: var(--green); }
+    .toggle input:checked + .slider::before { transform: translateX(18px); }
+  </style>
+</head>
+<body>
+
+<h1>Pomodoro</h1>
+
+<div class="tabs">
+  <button class="tab active" data-mode="pomodoro">Focus</button>
+  <button class="tab" data-mode="short">Short Break</button>
+  <button class="tab" data-mode="long">Long Break</button>
+</div>
+
+<div class="card">
+  <div class="ring-wrap">
+    <svg viewBox="0 0 220 220">
+      <circle class="ring-bg" cx="110" cy="110" r="100"/>
+      <circle class="ring-progress" id="ring" cx="110" cy="110" r="100"
+        stroke-dasharray="628.3"
+        stroke-dashoffset="0"/>
+    </svg>
+    <div class="ring-center">
+      <div id="display">25:00</div>
+      <div id="mode-label">Focus</div>
+    </div>
+  </div>
+
+  <div class="dots" id="dots"></div>
+
+  <div class="controls">
+    <button class="btn btn-icon" id="btn-reset" title="Reset">&#8635;</button>
+    <button class="btn btn-primary" id="btn-start">START</button>
+    <button class="btn btn-icon" id="btn-skip" title="Skip">&#9654;&#9654;</button>
+  </div>
+</div>
+
+<div class="settings">
+  <div class="setting-group">
+    <label>Focus (min)</label>
+    <input type="number" id="s-pomodoro" min="1" max="99" value="25" />
+  </div>
+  <div class="setting-group">
+    <label>Short Break</label>
+    <input type="number" id="s-short" min="1" max="99" value="5" />
+  </div>
+  <div class="setting-group">
+    <label>Long Break</label>
+    <input type="number" id="s-long" min="1" max="99" value="15" />
+  </div>
+</div>
+
+<div class="notif-row">
+  <label class="toggle">
+    <input type="checkbox" id="notif-toggle" />
+    <span class="slider"></span>
+  </label>
+  <span>Browser notifications</span>
+</div>
+
+<script>
+  const CIRCUMFERENCE = 2 * Math.PI * 100; // ~628.3
+
+  const state = {
+    mode: 'pomodoro',          // pomodoro | short | long
+    running: false,
+    remaining: 0,
+    total: 0,
+    session: 0,                // completed pomodoros (0-3)
+    timerId: null,
+    durations: { pomodoro: 25, short: 5, long: 15 },
+  };
+
+  const MODES = {
+    pomodoro: { label: 'Focus',       color: '#e94560', key: 'pomodoro' },
+    short:    { label: 'Short Break', color: '#4caf50', key: 'short' },
+    long:     { label: 'Long Break',  color: '#2196f3', key: 'long' },
+  };
+
+  // DOM
+  const displayEl  = document.getElementById('display');
+  const modeLabelEl = document.getElementById('mode-label');
+  const ring       = document.getElementById('ring');
+  const dotsEl     = document.getElementById('dots');
+  const btnStart   = document.getElementById('btn-start');
+  const btnReset   = document.getElementById('btn-reset');
+  const btnSkip    = document.getElementById('btn-skip');
+  const notifChk   = document.getElementById('notif-toggle');
+  const sPomEl     = document.getElementById('s-pomodoro');
+  const sShortEl   = document.getElementById('s-short');
+  const sLongEl    = document.getElementById('s-long');
+
+  // Render helpers
+  function fmt(sec) {
+    const m = String(Math.floor(sec / 60)).padStart(2, '0');
+    const s = String(sec % 60).padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  function updateRing() {
+    const frac = state.total > 0 ? state.remaining / state.total : 1;
+    ring.style.strokeDashoffset = CIRCUMFERENCE * (1 - frac);
+    ring.style.stroke = MODES[state.mode].color;
+  }
+
+  function renderDots() {
+    dotsEl.innerHTML = '';
+    for (let i = 0; i < 4; i++) {
+      const d = document.createElement('div');
+      d.className = 'dot' + (i < state.session ? ' done' : '');
+      dotsEl.appendChild(d);
+    }
+  }
+
+  function updateDisplay() {
+    displayEl.textContent = fmt(state.remaining);
+    modeLabelEl.textContent = MODES[state.mode].label;
+    document.title = `${fmt(state.remaining)} — ${MODES[state.mode].label}`;
+    updateRing();
+  }
+
+  function setMode(mode) {
+    state.mode = mode;
+    stop();
+    state.remaining = state.total = state.durations[mode] * 60;
+    document.querySelectorAll('.tab').forEach(t =>
+      t.classList.toggle('active', t.dataset.mode === mode));
+    updateDisplay();
+  }
+
+  // Timer logic
+  function tick() {
+    if (state.remaining <= 0) {
+      complete();
+      return;
+    }
+    state.remaining--;
+    updateDisplay();
+  }
+
+  function start() {
+    if (state.running) return;
+    state.running = true;
+    btnStart.textContent = 'PAUSE';
+    state.timerId = setInterval(tick, 1000);
+  }
+
+  function pause() {
+    state.running = false;
+    btnStart.textContent = 'RESUME';
+    clearInterval(state.timerId);
+  }
+
+  function stop() {
+    state.running = false;
+    btnStart.textContent = 'START';
+    clearInterval(state.timerId);
+  }
+
+  function reset() {
+    stop();
+    state.remaining = state.total = state.durations[state.mode] * 60;
+    updateDisplay();
+  }
+
+  function complete() {
+    stop();
+    notify(MODES[state.mode].label + ' complete!');
+    playBeep();
+
+    if (state.mode === 'pomodoro') {
+      state.session = (state.session + 1) % 5; // 4 pomodoros then cycle
+      renderDots();
+      // Auto-advance: every 4th pomodoro → long break, otherwise short
+      if (state.session === 0) {
+        setMode('long');
+      } else {
+        setMode('short');
+      }
+    } else {
+      setMode('pomodoro');
+    }
+  }
+
+  function skip() {
+    complete();
+  }
+
+  // Notifications
+  function notify(msg) {
+    if (!notifChk.checked) return;
+    if (Notification.permission === 'granted') {
+      new Notification('Pomodoro', { body: msg, icon: '' });
+    }
+  }
+
+  // Simple beep via Web Audio API
+  function playBeep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.15, 0.3].forEach(offset => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.4, ctx.currentTime + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + 0.1);
+        osc.start(ctx.currentTime + offset);
+        osc.stop(ctx.currentTime + offset + 0.15);
+      });
+    } catch (_) {}
+  }
+
+  // Settings inputs
+  function bindSetting(el, key) {
+    el.addEventListener('change', () => {
+      const val = Math.max(1, Math.min(99, parseInt(el.value) || 1));
+      el.value = val;
+      state.durations[key] = val;
+      if (state.mode === key) {
+        stop();
+        state.remaining = state.total = val * 60;
+        updateDisplay();
+      }
+    });
+  }
+
+  bindSetting(sPomEl,   'pomodoro');
+  bindSetting(sShortEl, 'short');
+  bindSetting(sLongEl,  'long');
+
+  // Event listeners
+  btnStart.addEventListener('click', () => state.running ? pause() : start());
+  btnReset.addEventListener('click', reset);
+  btnSkip.addEventListener('click', skip);
+
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => setMode(tab.dataset.mode));
+  });
+
+  notifChk.addEventListener('change', async () => {
+    if (notifChk.checked && Notification.permission !== 'granted') {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') notifChk.checked = false;
+    }
+  });
+
+  // Init
+  setMode('pomodoro');
+  renderDots();
+</script>
+</body>
+</html>
