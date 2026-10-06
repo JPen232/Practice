@@ -555,6 +555,61 @@
     ::-webkit-scrollbar-track { background:transparent; }
 
     @media (max-width:640px) { .connectivity { display:none; } .layout { gap:28px; } }
+
+    /* ── Schedule panel ─────────────────────── */
+    .schedule-panel {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 16px; display:flex;
+      flex-direction: column; gap: 12px;
+    }
+    .schedule-panel h3 {
+      font-size: .78rem; font-weight: 700; color: var(--text2);
+      text-transform: uppercase; letter-spacing: .8px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .schedule-slots { display: flex; gap: 8px; flex-wrap: wrap; }
+    .slot-wrap { display: flex; align-items: center; gap: 5px; }
+    .slot-time {
+      background: var(--surface); border: 1.5px solid var(--border);
+      border-radius: 8px; padding: 6px 10px; color: var(--text);
+      font-size: .82rem; font-family: 'SF Mono', monospace;
+      outline: none; width: 90px; transition: border-color .2s;
+    }
+    .slot-time:focus { border-color: var(--accent); }
+    .slot-del {
+      background: none; border: none; cursor: pointer;
+      color: var(--text3); font-size: .85rem; padding: 2px 4px;
+      transition: color .15s; line-height: 1;
+    }
+    .slot-del:hover { color: var(--red); }
+    .slot-add {
+      background: rgba(10,132,255,.12); border: 1.5px dashed rgba(10,132,255,.4);
+      border-radius: 8px; padding: 6px 12px; color: var(--accent);
+      font-size: .78rem; font-weight: 600; cursor: pointer;
+      font-family: inherit; transition: all .15s;
+    }
+    .slot-add:hover { background: rgba(10,132,255,.2); }
+    .schedule-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .sched-save-btn {
+      padding: 7px 16px; background: var(--accent); color: white;
+      border: none; border-radius: 8px; font-size: .78rem; font-weight: 700;
+      cursor: pointer; font-family: inherit; transition: background .15s;
+    }
+    .sched-save-btn:hover { background: #3395ff; }
+    .sched-status { font-size: .7rem; color: var(--green); }
+    .notif-toggle {
+      display: flex; align-items: center; gap: 8px;
+      font-size: .75rem; color: var(--text2); cursor: pointer;
+    }
+    .notif-toggle input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+    /* Watch next-briefing strip */
+    .w-next-brief {
+      text-align: center; font-size: .54rem; color: var(--accent);
+      padding: 2px 8px 4px; font-weight: 600; flex-shrink: 0;
+      letter-spacing: .2px;
+    }
+    .w-next-brief:empty { display: none; }
   </style>
 </head>
 <body>
@@ -578,6 +633,9 @@
             <div class="bat-icon"><div class="bat-fill"></div></div>72%
           </div>
         </div>
+
+        <!-- Next briefing countdown -->
+        <div class="w-next-brief" id="wNextBrief"></div>
 
         <!-- Watch tabs -->
         <div class="w-tabs">
@@ -703,6 +761,22 @@
 <!-- ═══ ADD ITEM + API KEY ═══ -->
 <div class="api-panel" style="flex-direction:column;gap:14px;">
 
+  <!-- Schedule config -->
+  <div class="schedule-panel">
+    <h3>⏰ Auto-Briefing Schedule</h3>
+    <div class="schedule-slots" id="scheduleSlots">
+      <!-- populated by JS -->
+    </div>
+    <div class="schedule-row">
+      <button class="sched-save-btn" onclick="saveSchedule()">Save Schedule</button>
+      <label class="notif-toggle">
+        <input type="checkbox" id="notifToggle" onchange="toggleNotifications(this.checked)" />
+        Browser notifications
+      </label>
+      <span class="sched-status" id="schedStatus"></span>
+    </div>
+  </div>
+
   <!-- Add inbox item -->
   <div class="inbox-add-area" style="background:var(--card);border-color:var(--border);">
     <label>Add to Inbox — Claude will decide if it matters</label>
@@ -733,9 +807,11 @@
 
 <script>
 // ── State ──────────────────────────────────────────────
-let apiKey  = localStorage.getItem('cw_api_key')   || '';
-let model   = localStorage.getItem('cw_model')     || 'claude-haiku-4-5-20251001';
-let items   = JSON.parse(localStorage.getItem('cw_items') || '[]');
+let apiKey   = localStorage.getItem('cw_api_key')   || '';
+let model    = localStorage.getItem('cw_model')     || 'claude-haiku-4-5-20251001';
+let items    = JSON.parse(localStorage.getItem('cw_items')    || '[]');
+let schedule = JSON.parse(localStorage.getItem('cw_schedule') || '["08:00","12:00","17:00"]');
+let lastBriefKey = localStorage.getItem('cw_last_brief') || ''; // "YYYY-MM-DD HH:MM"
 let chatBusy = false;
 let recognition = null;
 
@@ -746,16 +822,159 @@ window.addEventListener('load', () => {
     setApiStatus('Key loaded ✓', true);
   }
   document.getElementById('modelInput').value = model;
+  renderScheduleSlots();
+  // Restore notifications checkbox
+  const notifOn = localStorage.getItem('cw_notif') === 'true';
+  document.getElementById('notifToggle').checked = notifOn;
+  if (notifOn && Notification.permission === 'granted') {
+    setSchedStatus('Notifications on ✓');
+  }
   updateClock();
-  setInterval(updateClock, 10000);
+  setInterval(updateClock, 1000 * 60);  // every minute — checks schedule too
   renderInbox();
   renderWatchPriority();
+  updateNextBriefingDisplay();
 });
 
 function updateClock() {
-  const t = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+  const now = new Date();
+  const t = now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
   document.getElementById('watchTime').textContent = t;
   document.getElementById('phoneTime').textContent = t;
+  checkSchedule(now);
+  updateNextBriefingDisplay(now);
+}
+
+// ── Schedule ────────────────────────────────────────────
+function renderScheduleSlots() {
+  const container = document.getElementById('scheduleSlots');
+  let html = '';
+  schedule.forEach((t, i) => {
+    html += `
+      <div class="slot-wrap">
+        <input class="slot-time" type="time" value="${t}" id="slot-${i}" />
+        <button class="slot-del" onclick="removeSlot(${i})" title="Remove">✕</button>
+      </div>`;
+  });
+  if (schedule.length < 4) {
+    html += `<button class="slot-add" onclick="addSlot()">+ Add time</button>`;
+  }
+  container.innerHTML = html;
+}
+
+function addSlot() {
+  if (schedule.length >= 4) return;
+  schedule.push('18:00');
+  renderScheduleSlots();
+}
+
+function removeSlot(i) {
+  if (schedule.length <= 1) return;
+  schedule.splice(i, 1);
+  renderScheduleSlots();
+}
+
+function saveSchedule() {
+  const inputs = document.querySelectorAll('.slot-time');
+  schedule = Array.from(inputs).map(el => el.value).filter(Boolean);
+  schedule.sort();
+  localStorage.setItem('cw_schedule', JSON.stringify(schedule));
+  setSchedStatus('Saved ✓');
+  setTimeout(() => setSchedStatus(''), 2500);
+  renderScheduleSlots();
+  updateNextBriefingDisplay();
+}
+
+function setSchedStatus(msg) {
+  document.getElementById('schedStatus').textContent = msg;
+}
+
+async function toggleNotifications(on) {
+  localStorage.setItem('cw_notif', on ? 'true' : 'false');
+  if (on) {
+    if (Notification.permission === 'default') {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        setSchedStatus('Notifications on ✓');
+      } else {
+        document.getElementById('notifToggle').checked = false;
+        localStorage.setItem('cw_notif', 'false');
+        setSchedStatus('Permission denied');
+        setTimeout(() => setSchedStatus(''), 2500);
+      }
+    } else if (Notification.permission === 'granted') {
+      setSchedStatus('Notifications on ✓');
+    } else {
+      document.getElementById('notifToggle').checked = false;
+      localStorage.setItem('cw_notif', 'false');
+      setSchedStatus('Blocked — check browser settings');
+      setTimeout(() => setSchedStatus(''), 3000);
+    }
+  } else {
+    setSchedStatus('');
+  }
+}
+
+// Called every minute — fires briefing if current time matches a schedule slot
+function checkSchedule(now = new Date()) {
+  const hhmm = now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+  const dateStr = now.toLocaleDateString('en-CA'); // YYYY-MM-DD
+  const key = `${dateStr} ${hhmm}`;
+  if (lastBriefKey === key) return;          // already fired this minute
+  if (!schedule.includes(hhmm)) return;      // not a scheduled time
+
+  lastBriefKey = key;
+  localStorage.setItem('cw_last_brief', key);
+
+  // Notify
+  const notifOn = localStorage.getItem('cw_notif') === 'true';
+  if (notifOn && Notification.permission === 'granted') {
+    const important = items.filter(i => i.priority === 'important');
+    new Notification('Claude Briefing', {
+      body: important.length
+        ? `You have ${important.length} important item${important.length > 1 ? 's' : ''} — opening briefing`
+        : 'Scheduled briefing — inbox is clear',
+      icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="%230a84ff"/><text x="16" y="21" text-anchor="middle" font-size="18" fill="white">✦</text></svg>'
+    });
+  }
+
+  // Show visual indicator on watch then trigger
+  setWatchStatus(`Scheduled briefing at ${hhmm}`, 'active');
+  flashConnLine();
+  setTimeout(() => triggerBriefing(), 600);
+}
+
+// Compute and display "next briefing in X" on the watch face
+function updateNextBriefingDisplay(now = new Date()) {
+  const el = document.getElementById('wNextBrief');
+  if (!el || schedule.length === 0) return;
+
+  const todayMins = now.getHours() * 60 + now.getMinutes();
+  const slotMins  = schedule.map(t => {
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  });
+
+  // Find next slot today, or first tomorrow
+  let next = slotMins.find(m => m > todayMins);
+  let dayOffset = 0;
+  if (next === undefined) { next = slotMins[0]; dayOffset = 1; }
+
+  const diffMins = next - todayMins + dayOffset * 24 * 60;
+  const h = Math.floor(diffMins / 60);
+  const m = diffMins % 60;
+
+  const label = schedule.find(t => {
+    const [th, tm] = t.split(':').map(Number);
+    return th * 60 + tm === next;
+  }) || '';
+
+  let countdown;
+  if (diffMins < 60)       countdown = `in ${diffMins}m`;
+  else if (diffMins < 120) countdown = `in ${h}h ${m}m`;
+  else                     countdown = `at ${label}`;
+
+  el.textContent = `Next briefing ${countdown}`;
 }
 
 // ── API key ─────────────────────────────────────────────
